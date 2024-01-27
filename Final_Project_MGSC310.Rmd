@@ -1,0 +1,597 @@
+---
+title: "[Final Project]"
+author: "[Will Keegan, Jaelynn Ledesma, Dylan Calderon]"
+subtitle: MGSC 310 Problem Set Template
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+---
+
+```{r setup, include=FALSE}
+
+# Please leave this code chunk as is. It makes some slight formatting changes to alter the output to be more aesthetically pleasing. 
+
+library(knitr)
+
+# Change the number in set seed to your own favorite number
+set.seed(1818)
+options(width=70)
+options(scipen=99)
+
+
+# this sets text outputted in code chunks to small
+opts_chunk$set(tidy.opts=list(width.wrap=50),tidy=TRUE, size = "vsmall")  
+opts_chunk$set(message = FALSE,                                          
+               warning = FALSE,
+               # "caching" stores objects in code chunks and only rewrites if you change things
+               cache = FALSE,                               
+               # automatically downloads dependency files
+               autodep = TRUE,
+               # 
+               cache.comments = FALSE,
+               # 
+               collapse = TRUE,
+               # change fig.width and fig.height to change the code height and width by default
+               fig.width = 5.5,  
+               fig.height = 4.5,
+               fig.align='center')
+
+
+```
+
+```{r setup-2}
+
+# Always print this out before your assignment
+sessionInfo()
+getwd()
+
+```
+
+
+<!-- ### start answering your problem set here -->
+<!-- You may export your homework in either html or pdf, with the former usually being easier. 
+     To export or compile your Rmd file: click above on 'Knit' then 'Knit to HTML' -->
+<!-- Be sure to submit both your .Rmd file and the compiled .html or .pdf file for full credit -->
+
+
+```{r setup-3}
+
+# load all your libraries in this chunk 
+library('tidyverse')
+library(knitr)
+library('ISLR')
+library('tidyverse')
+library('rsample')
+library('yardstick')
+library(knitr)
+library('ISLR')
+library('tidyverse')
+library('rsample')
+library('yardstick')
+library(dplyr)
+library(lubridate)
+library('ggplot2')
+library('plotROC')
+# note, do not run install.packages() inside a code chunk. install them in the console outside of a code chunk. 
+
+
+
+```
+
+
+
+## Will's Code
+
+1a) Text response to part a. 
+
+```{r}
+library(readr)
+library(glmnet)
+library(coefplot)
+social_data <- read_csv("datasets/sentimentdataset.csv")
+head(social_data)
+str(social_data)
+
+# Summarize the data
+summary(social_data)
+colnames(social_data)
+str(social_data$Likes)
+# code for part a
+
+
+
+```
+
+
+1b) Response to part b. 
+
+```{r}
+library(text)
+library(sentimentr)
+library(glmnet)
+library(caret)
+library(dplyr)
+library(coefplot)
+
+#Create a copy of the dataset for feature engineering
+social_data_fe <- social_data
+
+#Check for missing values and remove rows with any missing values
+social_data_fe <- na.omit(social_data_fe)
+
+#Perform sentiment analysis on Hashtags using sentimentr package
+sentiment_scores <- sentimentr::sentiment_by(social_data_fe$Hashtags)
+
+#Categorize hashtags into positive and negative sentiment groups
+social_data_fe$SentimentPositive <- ifelse(sentiment_scores$ave_sentiment > 0, 1, 0)
+social_data_fe$SentimentNegative <- ifelse(sentiment_scores$ave_sentiment <= 0, 1, 0)
+
+#Create HourSlot based on military time
+social_data_fe$HourSlot <- cut(social_data_fe$Hour, breaks = c(0, 4, 8, 12, 16, 20, 24), labels = c(1, 2, 3, 4, 5, 6), include.lowest = TRUE)
+
+#Convert Month to factor
+social_data_fe$Month <- factor(social_data_fe$Month)
+
+#Create one-hot encoding for Month
+month_encoded <- model.matrix(~Month - 1, data = social_data_fe)
+
+#Create design matrix using model.matrix
+X_fe <- model.matrix(Likes ~ Platform + SentimentPositive + SentimentNegative + HourSlot + Day + Year - 1, data = social_data_fe)
+#Combine one-hot encoding with existing design matrix
+X_fe <- cbind(X_fe, month_encoded)
+
+#Standardize features
+X_fe_scaled <- scale(X_fe)
+
+#Response variable
+y_fe <- social_data_fe$Likes
+
+#Perform ridge regression on the updated dataset with feature engineering
+ridge_mod_fe <- cv.glmnet(X_fe_scaled, y_fe, alpha = 0)  # alpha = 0 for ridge regression
+
+#Print the coefficients
+print(coef(ridge_mod_fe, s = "lambda.min"))
+
+#Plot coefficient paths
+plot(ridge_mod_fe)
+coefplot(ridge_mod_fe, main = "Ridge Coefficient Paths")
+
+#Print cross-validated results
+print(ridge_mod_fe)
+coefpath(ridge_mod_fe)
+
+
+
+```
+
+## Linear Regression (Dylan's Code) 
+
+1a) Code for linear regression. 
+
+```{r}
+
+
+interactions <- read_csv("datasets/sentimentdataset.csv")
+
+clean_interactions <- interactions %>% select(-Timestamp, -Sentiment, -Text, -User, -Hashtags)
+
+clean_interactions <- clean_interactions %>% mutate(country_factor = as.factor(Country),  
+                                              month_factor = as.factor(Month), 
+                                              hour_factor = as.factor(Hour), day_factor = as.factor(Day)) %>% drop_na()
+
+
+interactions_split <- initial_split(clean_interactions, prop = 0.75)
+interactions_train <- training(interactions_split)
+interactions_test <- testing(interactions_split)
+
+mod <- lm(Likes ~ Platform + Country + month_factor + day_factor + hour_factor, 
+          data = interactions_train)
+
+summary(mod)
+
+country_coefficients <- coef(mod)[grep("^Country", names(coef(mod)))]
+
+country_data <- data.frame(country = gsub("^Country", "", names(country_coefficients)),
+                           coefficient_value = country_coefficients, stringsAsFactors = FALSE)
+
+combined_country_plot <- ggplot(country_data, aes(x = coefficient_value, y = country, label = country)) +
+  geom_point(color = "blue") +
+  geom_text(nudge_x = 0.1, hjust = 0, size = 5) +
+  labs(title = "Country's Magnitude on Likes",
+       x = "Effect on Likes",
+       y = "Country") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        text = element_text(size = 20),
+        plot.title = element_text(hjust = 0.5))
+
+print(combined_country_plot)
+
+mod2 <- lm(Retweets ~ Platform + Country + month_factor + day_factor + hour_factor, 
+          data = interactions_train)
+
+summary(mod2)
+country_coefficients <- coef(mod2)[grep("^Country", names(coef(mod2)))]
+
+country_data <- data.frame(country = gsub("^Country", "", names(country_coefficients)),
+                           coefficient_value = country_coefficients, stringsAsFactors = FALSE)
+
+combined_country_plot <- ggplot(country_data, aes(x = coefficient_value, y = country, label = country)) +
+  geom_point(color = "RED") +
+  geom_text(nudge_x = 0.1, hjust = 0, size = 5) +
+  labs(title = "Country's Magnitude on Retweets",
+       x = "Effect on Retweets",
+       y = "Country") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        text = element_text(size = 20),
+        plot.title = element_text(hjust = 0.5))
+
+print(combined_country_plot)
+
+# calculate root mean squared error (RMSE)
+get_rmse <- function(true, predictions){
+  sqrt(mean((true - predictions)^2))
+}
+
+preds_train <- predict(mod, newdata = interactions_train)
+
+preds_test <- predict(mod, data = interactions_test)
+
+preds_train2 <- predict(mod2, newdata = interactions_train)
+
+preds_test2 <- predict(mod2, data = interactions_test)
+
+# calcualte RMSE in the testdata()# calcualte RMSE in the testing and tinteractions_train# calcualte RMSE in the testing and training sets
+get_rmse(interactions_train$Likes, preds_train)
+get_rmse(interactions_test$Likes, preds_test)
+
+get_rmse(interactions_train$Retweets, preds_train)
+get_rmse(interactions_test$Retweets, preds_test)
+
+#Insta + Sweden + June + 13th + from 11 - 11:59 PM You could expect a post to reach around 106 likes
+30.4464 + 3.9836 + 32.7767 + 10.1978 + 17.3913 + 11.0877
+
+#Insta + Sweden + July + 13th + form 5 - 5:59 AM you could expect 42 retweets
+15.5065 + 1.6594 +16.4145 + 6.4297 + 1.6453
+
+```
+
+## Jaelynn's Code
+
+1a) Text response to part a. 
+
+```{r}
+
+# code for part a
+file_path <- "datasets/wages_train.csv"
+file_path <- "datasets/wages_test.csv"
+# Read CSV using read.csv
+wages_train <- read.csv(file_path)
+wages_test <- read.csv(file_path)
+# Display the first few rows of the data
+head(wages_train)
+head(wages_test)
+getwd()
+```
+
+
+1b)A factor variable is a categorical variable!For example in this data set  you may want to convert occupation, residence, ethnicity,industry, ect...
+
+
+
+```{r}
+
+# code for part b
+
+```
+
+1c)#The association is weakest in construction and strongest in the "other" category. #revist this tbh 
+
+
+```{r}
+
+# code for part c
+
+  ggplot(data = wages_train, aes(x = lschool, y = lwage)) + 
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +  
+    facet_wrap(~ industry) +
+    labs(title = " LWage vs. LSchooling by Industry",
+         x = "Years of Schooling",
+         y = "Wage")
+  
+
+
+```
+
+1d)
+
+```{r}
+
+# code for part d
+lm_mod1 <- lm(lwage ~ year + union + health + industry + occupation + lschool +lexper, 
+            data = wages_train)
+summary(lm_mod1)
+
+```
+
+1e) For Lschool we can find a strong pattern in years of schooling and lwage. As the unit or year of schooling increases by 1 there is a positive increase in wage by 0.85 or 85%. We can also see another positive association between wage and expereince. As the unit of experience increases by 1 there is an increase in wage by 0.14 or 14%. 
+
+
+```{r}
+
+# code for part e
+
+```
+
+1f)Our variable lexper holds a p-value of 0.09892. Typically we would want our p-value to be lower than the value of 0.05.This shows statistical insignificance and explains that this variable is not super strong and could possibly be due to chance in out model.So from this we can gather the idea that although there is a positive relationship between wage and experience, it is not a strong relationship.We can compare this relationship to schooling and wage where our p-value is more desirable. Based off of this i would put more resources or intrest in having more years of schooling than experience. 
+
+```{r}
+
+# code for part f
+
+```
+
+1g)
+
+```{r}
+
+# code for part g
+
+#library(dplyr)
+wages_train <- wages_train %>%
+  mutate(wage = exp(lwage),
+         school = exp(lschool),
+         exper = exp(lexper))
+
+lm_mod2 <- lm(wage ~ school + exper + union, data = wages_train)
+summary(lm_mod2)
+
+
+```
+
+1h)below we can observe that our estimate of unionyes is 12477. This reveals that being apart of a union adds 12477 units (usd) to wage as opposed to not being a union member! We can further observe that this is plausible because of our small p-value which proves statistical significance. This just means that our model is not based off of chance and this relationsip of being a union member and having higher wages than a non-union member is real. 
+
+
+```{r}
+
+# code for part h
+
+```
+
+etc...
+
+
+## Question 2
+
+2a) Response to part a. 
+
+
+```{r}
+
+# code for 2a
+wages_sub <- wages_train %>% select(lwage, union, married, industry, occupation, lexper, residence)
+ridge_mod <- cv.glmnet(x = as.matrix(wages_sub %>% select(-lwage)),  
+                       y = wages_sub$lwage,
+                       alpha = 0)  #note alpha = 0 sets ridge! 
+
+print(ridge_mod)
+summary(ridge_mod)
+
+#test no
+wages_sub <- wages_test %>% select(lwage, union, married, industry, occupation, lexper, residence)
+ridge_mod2 <- cv.glmnet(x = as.matrix(wages_sub %>% select(-lwage)),  
+                       y = wages_sub$lwage,
+                       alpha = 0)  #note alpha = 0 sets ridge! 
+print(ridge_mod2)
+summary(ridge_mod2)
+```
+
+
+2b) Response to part b. 
+
+
+```{r}
+
+# code for 2b
+wages_sub <- wages_train %>% select(lwage, union, married, industry, occupation, lexper, residence)
+lasso_mod <- cv.glmnet(x = as.matrix(wages_sub %>% select(-lwage)),  
+                       y = wages_sub$lwage,
+                       alpha = 1)  #note alpha = 1 sets lasso! 
+
+print(lasso_mod)
+summary(lasso_mod)
+
+```
+
+2c)On the x-axis is there is our lambda value which can be interpreted as our penalty score for the model. As complexity (variables) of the model increases so does otu lambda. the vertical lines on our plot are the lambda.1se and lambda.min. The 1s on the top of the plot represent our variables. Finally the y-axis shows the MSE of the model, so as out lambda penalty increases so does the MSE.
+
+
+```{r}
+
+# code for 2c
+plot(lasso_mod)
+
+
+```
+
+2d)
+coef(lasso_mod, 
+     s = lasso_mod$lambda.min) %>% 
+  round(3)
+
+```{r}
+
+# code for 2d
+
+```
+
+2e)K-fold cross validation takes the concept of taking our observations for resampling and then leaving one out for testing the data. This process is repeated until all of our folds ( equal division of the data) have be used.For the above models we used cv.glment which aided us in dividing our data (specific varaibles  union, married, industry, occupation, lexper, residence) into k-folds for sampling. 
+
+
+```{r}
+
+# code for 2e
+
+```
+
+
+
+## Question 3
+
+3a) 
+
+```{r}
+
+# code for 3a
+
+file_path <- "datasets/credit_train.csv"
+file_path <- "datasets/credit_test.csv"
+
+# Read CSV using read.csv
+credit_train <- read.csv(file_path)
+credit_test <- read.csv(file_path)
+
+```
+
+3b)
+```{r}
+
+# code for 3b
+glimpse(credit_train)
+glimpse(credit_test)
+
+```
+
+3c) this output gives provides a story on how likely someone is to default on their loan based off of the variable  age, income, ever_past_due, and real_estate_loan.Income can be seen at -0.0000025123 with a great p-value of <2e-16 (we can trust our model it is not just by chance).This reveals that for every unit income increases, the probability of defaulting on a loan decreases by -0.0000025123.Real_estate_loan has an esitamet of -0.0231817016 and another favorable p-value. This explain that for every 1 unit of real_estate_loan there is a decrease of default by -0.0231817016. Age is also statistically significant and can be interpreted as for every 1 unit of age increased, default decreases by -0.0014606776.Finally the output for ever_past_due explains if this category equals 1 (the individual has been past due on payments before) there is an increase in default by 0.1595476501. 
+
+
+```{r}
+
+# code for part 3c
+mod1 <- lm(default ~ income + real_estate_loan + age + ever_past_due, 
+           data = credit_train)
+summary(mod1)
+
+
+```
+
+3d) ever_past_due is  0.1595476501 which reveals that if an individual has been past due on a payment their likelihood of default increases by  0.1595476501 incomparison to other individuals who have never been past due. real_estate has the coefficient of -0.0231817016 which implies that if a user is a cardholder they decrease their lieklyhood of default by -0.0231817016.   
+
+```{r}
+
+# code for 3d
+
+```
+
+3e) Yes, I would not find that real_estate_loan has a causal impact on default. Our coefficient magnitude would assume somewhat differently, we can make a great assumption that there is somewhat of a casual relationship.This model reveals that there is a strong relationship between the two variables but there is more that goes into causal impact. I would say that forming causal relationships when predicting default behavior is important.This would require further expertise in deciding if two variables are truly casual or not, but for prediction of default the magnitude of each relationship reveals a lot.The large point of making these predictions is to find relationships between each variables and understand how they impact one another.
+
+## Alice's Code
+
+## Question 1
+
+1a) Text response to part a. 
+
+```{r}
+media <- read_csv("datasets/sentimentdataset.csv")
+
+media_clean <- media %>%
+  mutate(
+    Timestamp = as.character(Timestamp),
+    Timestamp = as.POSIXct(Timestamp, format = "%Y-%m-%d %H:%M:%S", tz = "UTC"),
+    Day_Of_Week = wday(Timestamp, label = TRUE, abbr = FALSE),
+    Viral = ifelse(Likes > 
+                     50, 1, 0),
+    Day_Of_Week_factor = as.factor(Day_Of_Week),
+    Year_factor = as.factor(Year),
+    Month_factor = as.factor(Month)
+    ) 
+
+#Split dataset into Train and Test Sets
+media_split <- initial_split(media_clean, prop = 0.75)
+media_train <- training(media_split)
+media_test <- testing(media_split)
+
+
+#Fit a logistic regression model to predict whether a movie is viral using 'Day_Of_Week_factor', 'Year_factor', 'Month_factor', and 'Hour' as predictors.
+media_logit1 <-  glm(Viral ~ Year_factor + Month_factor + Day_Of_Week_factor + Hour,
+                     family=binomial,
+                     data = media_train)
+
+summary(media_logit1)
+
+
+
+```
+```{r}
+#Print summary
+summary(media_logit1)
+levels(media_clean$Day_Of_Week_factor)
+
+exp_coefs <- exp(coef(media_logit1))
+exp(coef(media_logit1)['Month_factor7'])
+
+
+exp(coef(media_logit1)['Hour'])
+
+#Score Model on Train and Test Set
+scores_train <- predict(media_logit1,
+                  type = "response", 
+                  data = media_train)
+
+scores_test <- predict(media_logit1,
+                        type = "response", 
+                        data = media_test)
+
+```
+
+
+
+```{r}
+#Create a results data frame that holds the true class 
+#the predicted class, the predicted probability of the event 
+
+
+
+results_train <- tibble(
+  `true_class` = as.factor(media_train$Viral),
+  `prob_event` =  scores_train,
+  `prob_not_event` = 1 - scores_train,
+  `pred_class` = as.factor(ifelse(scores_train > 0.4,
+                                  "1","0"))
+)
+
+results_test <- data.frame(
+  `true_class` = as.factor(media_test$Viral),
+  `prob_event` =  scores_test,
+  `prob_not_event` = 1 - scores_train,
+  `pred_class` = as.factor(ifelse(scores_test > 0.4,
+                                  "1","0")))
+                                  
+                                  
+```
+
+```{r}
+#4. Generate a confusion matrix using the results data frame using 0.4 as the cutoff
+cm_train <- conf_mat(results_train, 
+               truth = true_class,
+               estimate = pred_class)
+
+print(cm_train)
+autoplot(cm_train, "heatmap")
+
+
+cm_test <- conf_mat(results_test, 
+                     truth = true_class,
+                     estimate = pred_class)
+
+print(cm_test)
+autoplot(cm_test, "heatmap")
+```
+
+
+
+
+```
